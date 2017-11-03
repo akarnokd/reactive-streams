@@ -1,14 +1,27 @@
+/************************************************************************
+ * Licensed under Public Domain (CC0)                                    *
+ *                                                                       *
+ * To the extent possible under law, the person who associated CC0 with  *
+ * this code has waived all copyright and related or neighboring         *
+ * rights to this code.                                                  *
+ *                                                                       *
+ * You should have received a copy of the CC0 legalcode along with this  *
+ * work. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.*
+ ************************************************************************/
+
 package org.reactivestreams.tck;
 
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
-import org.reactivestreams.tck.support.TCKVerificationSupport;
+import org.reactivestreams.tck.flow.support.TCKVerificationSupport;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
 * Validates that the TCK's {@link org.reactivestreams.tck.SubscriberBlackboxVerification} fails with nice human readable errors.
@@ -101,6 +114,34 @@ public class SubscriberBlackboxVerificationTest extends TCKVerificationSupport {
   }
 
   @Test
+  public void required_spec205_blackbox_mustCallSubscriptionCancelIfItAlreadyHasAnSubscriptionAndReceivesAnotherOnSubscribeSignal_shouldGetCompletion() throws Throwable {
+    final CountDownLatch completion = new CountDownLatch(1);
+      
+    customSubscriberVerification(new KeepSubscriptionSubscriber() {
+      volatile Subscription sub;
+
+      @Override
+      public void onSubscribe(Subscription s) {
+        super.onSubscribe(s);
+        if (sub != null) {
+          sub = s;
+          s.request(1);
+        } else {
+          // the second one we cancel
+          s.cancel();
+        }
+      }
+
+      @Override
+      public void onComplete() {
+        completion.countDown();
+      }
+    }).required_spec205_blackbox_mustCallSubscriptionCancelIfItAlreadyHasAnSubscriptionAndReceivesAnotherOnSubscribeSignal();
+    
+    completion.await(1, TimeUnit.SECONDS);
+  }
+
+  @Test
   public void required_spec209_blackbox_mustBePreparedToReceiveAnOnCompleteSignalWithPrecedingRequestCall_shouldFail() throws Throwable {
     requireTestFailure(new ThrowingRunnable() {
       @Override public void run() throws Throwable {
@@ -108,7 +149,7 @@ public class SubscriberBlackboxVerificationTest extends TCKVerificationSupport {
           // don't even request()
         }).required_spec209_blackbox_mustBePreparedToReceiveAnOnCompleteSignalWithPrecedingRequestCall();
       }
-    }, "did not call `registerOnComplete()`");
+    }, "Did not receive expected `request` call within");
   }
 
   @Test
@@ -119,11 +160,38 @@ public class SubscriberBlackboxVerificationTest extends TCKVerificationSupport {
   }
 
   @Test
-  public void required_spec210_blackbox_mustBePreparedToReceiveAnOnErrorSignalWithPrecedingRequestCall_shouldFail() throws Throwable {
+  public void required_spec210_blackbox_mustBePreparedToReceiveAnOnErrorSignalWithPrecedingRequestCall_shouldPass_withRequestingSubscriber() throws Throwable {
+    customSubscriberVerification(new NoopSubscriber() {
+      @Override
+      public void onSubscribe(Subscription s) {
+        s.request(1); // request anything
+      }
+    }).required_spec209_blackbox_mustBePreparedToReceiveAnOnCompleteSignalWithPrecedingRequestCall();
+  }
+
+  @Test
+  public void required_spec210_blackbox_mustBePreparedToReceiveAnOnErrorSignalWithPrecedingRequestCall_shouldFail_withNoopSubscriber() throws Throwable {
+    requireTestFailure(new ThrowingRunnable() {
+      @Override
+      public void run() throws Throwable {
+        customSubscriberVerification(new NoopSubscriber() {
+          // not requesting, so we can't test the "request followed by failure" scenario
+        }).required_spec209_blackbox_mustBePreparedToReceiveAnOnCompleteSignalWithPrecedingRequestCall();
+      }
+    }, "Did not receive expected `request` call within");
+  }
+
+  @Test
+  public void required_spec210_blackbox_mustBePreparedToReceiveAnOnErrorSignalWithPrecedingRequestCall_shouldFail_withThrowingInsideOnError() throws Throwable {
     requireTestFailure(new ThrowingRunnable() {
       @Override public void run() throws Throwable {
 
         customSubscriberVerification(new NoopSubscriber() {
+          @Override
+          public void onSubscribe(Subscription s) {
+            s.request(1);
+          }
+
           @Override public void onError(Throwable t) {
             // this is wrong in many ways (incl. spec violation), but aims to simulate user code which "blows up" when handling the onError signal
             throw new RuntimeException("Wrong, don't do this!", t); // don't do this
@@ -131,6 +199,39 @@ public class SubscriberBlackboxVerificationTest extends TCKVerificationSupport {
         }).required_spec210_blackbox_mustBePreparedToReceiveAnOnErrorSignalWithPrecedingRequestCall();
       }
     }, "Test Exception: Boom!"); // checks that the expected exception was delivered to onError, we don't expect anyone to implement onError so weirdly
+  }
+
+  @Test
+  public void required_spec213_blackbox_mustThrowNullPointerExceptionWhenParametersAreNull_mustFailOnIgnoredNull_onSubscribe() throws Throwable {
+    requireTestFailure(new ThrowingRunnable() {
+      @Override public void run() throws Throwable {
+
+        customSubscriberVerification(new NoopSubscriber())
+          .required_spec213_blackbox_onSubscribe_mustThrowNullPointerExceptionWhenParametersAreNull();
+      }
+    }, "onSubscribe(null) did not throw NullPointerException");
+  }
+  
+  @Test
+  public void required_spec213_blackbox_mustThrowNullPointerExceptionWhenParametersAreNull_mustFailOnIgnoredNull_onNext() throws Throwable {
+    requireTestFailure(new ThrowingRunnable() {
+      @Override public void run() throws Throwable {
+
+        customSubscriberVerification(new NoopSubscriber())
+          .required_spec213_blackbox_onNext_mustThrowNullPointerExceptionWhenParametersAreNull();
+      }
+    }, "onNext(null) did not throw NullPointerException");
+  }
+  
+  @Test
+  public void required_spec213_blackbox_mustThrowNullPointerExceptionWhenParametersAreNull_mustFailOnIgnoredNull_onError() throws Throwable {
+    requireTestFailure(new ThrowingRunnable() {
+      @Override public void run() throws Throwable {
+
+        customSubscriberVerification(new NoopSubscriber())
+          .required_spec213_blackbox_onError_mustThrowNullPointerExceptionWhenParametersAreNull();
+      }
+    }, "onError(null) did not throw NullPointerException");
   }
 
   // FAILING IMPLEMENTATIONS //

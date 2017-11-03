@@ -1,3 +1,14 @@
+/************************************************************************
+* Licensed under Public Domain (CC0)                                    *
+*                                                                       *
+* To the extent possible under law, the person who associated CC0 with  *
+* this code has waived all copyright and related or neighboring         *
+* rights to this code.                                                  *
+*                                                                       *
+* You should have received a copy of the CC0 legalcode along with this  *
+* work. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.*
+************************************************************************/
+
 package org.reactivestreams.example.unicast;
 
 import org.reactivestreams.Subscriber;
@@ -50,7 +61,7 @@ public abstract class AsyncSubscriber<T> implements Subscriber<T>, Runnable {
   // herefor we also need to cancel our `Subscription`.
   private final void done() {
     //On this line we could add a guard against `!done`, but since rule 3.7 says that `Subscription.cancel()` is idempotent, we don't need to.
-    done = true; // If we `foreach` throws an exception, let's consider ourselves done (not accepting more elements)
+    done = true; // If `whenNext` throws an exception, let's consider ourselves done (not accepting more elements)
     if (subscription != null) { // If we are bailing out before we got a `Subscription` there's little need for cancelling it.
       try {
         subscription.cancel(); // Cancel the subscription
@@ -94,15 +105,16 @@ public abstract class AsyncSubscriber<T> implements Subscriber<T>, Runnable {
         s.request(1); // Our Subscriber is unbuffered and modest, it requests one element at a time
       } catch(final Throwable t) {
         // Subscription.request is not allowed to throw according to rule 3.16
-        (new IllegalStateException(s + " violated the Reactive Streams rule 3.16 by throwing an exception from cancel.", t)).printStackTrace(System.err);
+        (new IllegalStateException(s + " violated the Reactive Streams rule 3.16 by throwing an exception from request.", t)).printStackTrace(System.err);
       }
     }
   }
 
   private final void handleOnNext(final T element) {
     if (!done) { // If we aren't already done
-      if(subscription == null) { // Check for spec violation of 2.1
-        (new IllegalStateException("Someone violated the Reactive Streams rule 2.1 by signalling OnNext before `Subscription.request`. (no Subscription)")).printStackTrace(System.err);
+      if(subscription == null) { // Technically this check is not needed, since we are expecting Publishers to conform to the spec
+        // Check for spec violation of 2.1 and 1.09
+        (new IllegalStateException("Someone violated the Reactive Streams rule 1.09 and 2.1 by signalling OnNext before `Subscription.request`. (no Subscription)")).printStackTrace(System.err);
       } else {
         try {
           if (whenNext(element)) {
@@ -110,13 +122,13 @@ public abstract class AsyncSubscriber<T> implements Subscriber<T>, Runnable {
               subscription.request(1); // Our Subscriber is unbuffered and modest, it requests one element at a time
             } catch(final Throwable t) {
               // Subscription.request is not allowed to throw according to rule 3.16
-              (new IllegalStateException(subscription + " violated the Reactive Streams rule 3.16 by throwing an exception from cancel.", t)).printStackTrace(System.err);
+              (new IllegalStateException(subscription + " violated the Reactive Streams rule 3.16 by throwing an exception from request.", t)).printStackTrace(System.err);
             }
           } else {
             done(); // This is legal according to rule 2.6
           }
         } catch(final Throwable t) {
-           done(); 
+          done();
           try {  
             onError(t);
           } catch(final Throwable t2) {
@@ -130,28 +142,47 @@ public abstract class AsyncSubscriber<T> implements Subscriber<T>, Runnable {
 
   // Here it is important that we do not violate 2.2 and 2.3 by calling methods on the `Subscription` or `Publisher`
   private void handleOnComplete() {
-    done = true; // Obey rule 2.4
-    whenComplete();
+    if (subscription == null) { // Technically this check is not needed, since we are expecting Publishers to conform to the spec
+      // Publisher is not allowed to signal onComplete before onSubscribe according to rule 1.09
+      (new IllegalStateException("Publisher violated the Reactive Streams rule 1.09 signalling onComplete prior to onSubscribe.")).printStackTrace(System.err);
+    } else {
+      done = true; // Obey rule 2.4
+      whenComplete();
+    }
   }
 
   // Here it is important that we do not violate 2.2 and 2.3 by calling methods on the `Subscription` or `Publisher`
   private void handleOnError(final Throwable error) {
-    done = true; // Obey rule 2.4
-    whenError(error);
+    if (subscription == null) { // Technically this check is not needed, since we are expecting Publishers to conform to the spec
+      // Publisher is not allowed to signal onError before onSubscribe according to rule 1.09
+      (new IllegalStateException("Publisher violated the Reactive Streams rule 1.09 signalling onError prior to onSubscribe.")).printStackTrace(System.err);
+    } else {
+      done = true; // Obey rule 2.4
+      whenError(error);
+    }
   }
 
   // We implement the OnX methods on `Subscriber` to send Signals that we will process asycnhronously, but only one at a time
 
   @Override public final void onSubscribe(final Subscription s) {
+    // As per rule 2.13, we need to throw a `java.lang.NullPointerException` if the `Subscription` is `null`
+    if (s == null) throw null;
+
     signal(new OnSubscribe(s));
   }
 
   @Override public final void onNext(final T element) {
+    // As per rule 2.13, we need to throw a `java.lang.NullPointerException` if the `element` is `null`
+    if (element == null) throw null;
+
     signal(new OnNext<T>(element));
   }
 
   @Override public final void onError(final Throwable t) {
-     signal(new OnError(t));
+    // As per rule 2.13, we need to throw a `java.lang.NullPointerException` if the `Throwable` is `null`
+    if (t == null) throw null;
+
+    signal(new OnError(t));
   }
 
   @Override public final void onComplete() {
@@ -172,7 +203,6 @@ public abstract class AsyncSubscriber<T> implements Subscriber<T>, Runnable {
       try {
         final Signal s = inboundSignals.poll(); // We take a signal off the queue
         if (!done) { // If we're done, we shouldn't process any more signals, obeying rule 2.8
-
           // Below we simply unpack the `Signal`s and invoke the corresponding methods
           if (s instanceof OnNext<?>)
             handleOnNext(((OnNext<T>)s).next);
@@ -180,7 +210,7 @@ public abstract class AsyncSubscriber<T> implements Subscriber<T>, Runnable {
             handleOnSubscribe(((OnSubscribe)s).subscription);
           else if (s instanceof OnError) // We are always able to handle OnError, obeying rule 2.10
             handleOnError(((OnError)s).error);
-          else if (s == OnComplete.Instance) // We are always able to handle OnError, obeying rule 2.9
+          else if (s == OnComplete.Instance) // We are always able to handle OnComplete, obeying rule 2.9
             handleOnComplete();
         }
       } finally {

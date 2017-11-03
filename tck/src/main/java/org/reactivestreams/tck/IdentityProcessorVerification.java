@@ -1,3 +1,14 @@
+/************************************************************************
+ * Licensed under Public Domain (CC0)                                    *
+ *                                                                       *
+ * To the extent possible under law, the person who associated CC0 with  *
+ * this code has waived all copyright and related or neighboring         *
+ * rights to this code.                                                  *
+ *                                                                       *
+ * You should have received a copy of the CC0 legalcode along with this  *
+ * work. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.*
+ ************************************************************************/
+
 package org.reactivestreams.tck;
 
 import org.reactivestreams.Processor;
@@ -8,16 +19,16 @@ import org.reactivestreams.tck.TestEnvironment.ManualPublisher;
 import org.reactivestreams.tck.TestEnvironment.ManualSubscriber;
 import org.reactivestreams.tck.TestEnvironment.ManualSubscriberWithSubscriptionSupport;
 import org.reactivestreams.tck.TestEnvironment.Promise;
-import org.reactivestreams.tck.support.Function;
-import org.reactivestreams.tck.support.SubscriberWhiteboxVerificationRules;
-import org.reactivestreams.tck.support.PublisherVerificationRules;
+import org.reactivestreams.tck.flow.support.Function;
+import org.reactivestreams.tck.flow.support.SubscriberWhiteboxVerificationRules;
+import org.reactivestreams.tck.flow.support.PublisherVerificationRules;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 import java.util.HashSet;
 import java.util.Set;
 
-public abstract class IdentityProcessorVerification<T> extends WithHelperPublisher<T> 
+public abstract class IdentityProcessorVerification<T> extends WithHelperPublisher<T>
   implements SubscriberWhiteboxVerificationRules, PublisherVerificationRules {
 
   private final TestEnvironment env;
@@ -94,8 +105,8 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
       }
 
       @Override
-      public Publisher<T> createErrorStatePublisher() {
-        return IdentityProcessorVerification.this.createErrorStatePublisher();
+      public Publisher<T> createFailedPublisher() {
+        return IdentityProcessorVerification.this.createFailedPublisher();
       }
 
       @Override
@@ -125,10 +136,14 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
   public abstract Processor<T, T> createIdentityProcessor(int bufferSize);
 
   /**
-   * Return a Publisher that immediately signals {@code onError} to incoming subscriptions,
-   * or {@code null} in order to skip them.
+   * By implementing this method, additional TCK tests concerning a "failed" publishers will be run.
+   *
+   * The expected behaviour of the {@link Publisher} returned by this method is hand out a subscription,
+   * followed by signalling {@code onError} on it, as specified by Rule 1.9.
+   *
+   * If you ignore these additional tests, return {@code null} from this method.
    */
-  public abstract Publisher<T> createErrorStatePublisher();
+  public abstract Publisher<T> createFailedPublisher();
 
   /**
    * Override and return lower value if your Publisher is only able to produce a known number of elements.
@@ -148,7 +163,7 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
    * {@code Subscription} actually solves the "unbounded recursion" problem by not allowing the number of
    * recursive calls to exceed the number returned by this method.
    *
-   * @see <a href="https://github.com/reactive-streams/reactive-streams#3.3">reactive streams spec, rule 3.3</a>
+   * @see <a href="https://github.com/reactive-streams/reactive-streams-jvm#3.3">reactive streams spec, rule 3.3</a>
    * @see PublisherVerification#required_spec303_mustNotAllowUnboundedRecursion()
    */
   public long boundedDepthOfOnNextAndRequestRecursion() {
@@ -204,7 +219,7 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
   }
 
   /////////////////////// DELEGATED TESTS, A PROCESSOR "IS A" PUBLISHER //////////////////////
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#4.1
+  // Verifies rule: https://github.com/reactive-streams/reactive-streams-jvm#4.1
 
   @Test
   public void required_createPublisher1MustProduceAStreamOfExactly1Element() throws Throwable {
@@ -272,6 +287,21 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
   }
 
   @Override @Test
+  public void required_spec109_subscribeThrowNPEOnNullSubscriber() throws Throwable {
+    publisherVerification.required_spec109_subscribeThrowNPEOnNullSubscriber();
+  }
+
+  @Override @Test
+  public void required_spec109_mayRejectCallsToSubscribeIfPublisherIsUnableOrUnwillingToServeThemRejectionMustTriggerOnErrorAfterOnSubscribe() throws Throwable {
+    publisherVerification.required_spec109_mayRejectCallsToSubscribeIfPublisherIsUnableOrUnwillingToServeThemRejectionMustTriggerOnErrorAfterOnSubscribe();
+  }
+
+  @Override @Test
+  public void required_spec109_mustIssueOnSubscribeForNonNullSubscriber() throws Throwable {
+    publisherVerification.required_spec109_mustIssueOnSubscribeForNonNullSubscriber();
+  }
+
+  @Override @Test
   public void untested_spec110_rejectASubscriptionRequestIfTheSameSubscriberSubscribesTwice() throws Throwable {
     publisherVerification.untested_spec110_rejectASubscriptionRequestIfTheSameSubscriberSubscribesTwice();
   }
@@ -282,23 +312,23 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
   }
 
   @Override @Test
-  public void required_spec112_mayRejectCallsToSubscribeIfPublisherIsUnableOrUnwillingToServeThemRejectionMustTriggerOnErrorInsteadOfOnSubscribe() throws Throwable {
-    publisherVerification.required_spec112_mayRejectCallsToSubscribeIfPublisherIsUnableOrUnwillingToServeThemRejectionMustTriggerOnErrorInsteadOfOnSubscribe();
+  public void optional_spec111_registeredSubscribersMustReceiveOnNextOrOnCompleteSignals() throws Throwable {
+    publisherVerification.optional_spec111_registeredSubscribersMustReceiveOnNextOrOnCompleteSignals();
   }
 
   @Override @Test
-  public void required_spec113_mustProduceTheSameElementsInTheSameSequenceToAllOfItsSubscribersWhenRequestingOneByOne() throws Throwable {
-    publisherVerification.required_spec113_mustProduceTheSameElementsInTheSameSequenceToAllOfItsSubscribersWhenRequestingOneByOne();
+  public void optional_spec111_multicast_mustProduceTheSameElementsInTheSameSequenceToAllOfItsSubscribersWhenRequestingOneByOne() throws Throwable {
+    publisherVerification.optional_spec111_multicast_mustProduceTheSameElementsInTheSameSequenceToAllOfItsSubscribersWhenRequestingOneByOne();
   }
 
   @Override @Test
-  public void required_spec113_mustProduceTheSameElementsInTheSameSequenceToAllOfItsSubscribersWhenRequestingManyUpfront() throws Throwable {
-    publisherVerification.required_spec113_mustProduceTheSameElementsInTheSameSequenceToAllOfItsSubscribersWhenRequestingManyUpfront();
+  public void optional_spec111_multicast_mustProduceTheSameElementsInTheSameSequenceToAllOfItsSubscribersWhenRequestingManyUpfront() throws Throwable {
+    publisherVerification.optional_spec111_multicast_mustProduceTheSameElementsInTheSameSequenceToAllOfItsSubscribersWhenRequestingManyUpfront();
   }
 
   @Override @Test
-  public void required_spec113_mustProduceTheSameElementsInTheSameSequenceToAllOfItsSubscribersWhenRequestingManyUpfrontAndCompleteAsExpected() throws Throwable {
-    publisherVerification.required_spec113_mustProduceTheSameElementsInTheSameSequenceToAllOfItsSubscribersWhenRequestingManyUpfrontAndCompleteAsExpected();
+  public void optional_spec111_multicast_mustProduceTheSameElementsInTheSameSequenceToAllOfItsSubscribersWhenRequestingManyUpfrontAndCompleteAsExpected() throws Throwable {
+    publisherVerification.optional_spec111_multicast_mustProduceTheSameElementsInTheSameSequenceToAllOfItsSubscribersWhenRequestingManyUpfrontAndCompleteAsExpected();
   }
 
   @Override @Test
@@ -317,8 +347,8 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
   }
 
   @Override @Test
-  public void untested_spec305_cancelMustNotSynchronouslyPerformHeavyCompuatation() throws Exception {
-    publisherVerification.untested_spec305_cancelMustNotSynchronouslyPerformHeavyCompuatation();
+  public void untested_spec305_cancelMustNotSynchronouslyPerformHeavyComputation() throws Exception {
+    publisherVerification.untested_spec305_cancelMustNotSynchronouslyPerformHeavyComputation();
   }
 
   @Override @Test
@@ -339,6 +369,11 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
   @Override @Test
   public void required_spec309_requestNegativeNumberMustSignalIllegalArgumentException() throws Throwable {
     publisherVerification.required_spec309_requestNegativeNumberMustSignalIllegalArgumentException();
+  }
+  
+  @Override @Test
+  public void optional_spec309_requestNegativeNumberMaySignalIllegalArgumentExceptionWithSpecificMessage() throws Throwable {
+    publisherVerification.optional_spec309_requestNegativeNumberMaySignalIllegalArgumentExceptionWithSpecificMessage();
   }
 
   @Override @Test
@@ -366,9 +401,9 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
     publisherVerification.required_spec317_mustNotSignalOnErrorWhenPendingAboveLongMaxValue();
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#1.4
+  // Verifies rule: https://github.com/reactive-streams/reactive-streams-jvm#1.4
   // for multiple subscribers
-  @Test 
+  @Test
   public void required_spec104_mustCallOnErrorOnAllItsSubscribersIfItEncountersANonRecoverableError() throws Throwable {
     optionalMultipleSubscribersTest(2, new Function<Long,TestSetup>() {
       @Override
@@ -394,14 +429,14 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
           sub1.expectError(ex);
           sub2.expectError(ex);
 
-          env.verifyNoAsyncErrors();
+          env.verifyNoAsyncErrorsNoDelay();
         }};
       }
     });
   }
 
   ////////////////////// SUBSCRIBER RULES VERIFICATION ///////////////////////////
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#4.1
+  // Verifies rule: https://github.com/reactive-streams/reactive-streams-jvm#4.1
 
   // A Processor
   //   must obey all Subscriber rules on its consuming side
@@ -466,12 +501,12 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
       sendError(ex);
       sub.expectError(ex); // "immediately", i.e. without a preceding request
 
-      env.verifyNoAsyncErrors();
+      env.verifyNoAsyncErrorsNoDelay();
     }};
   }
 
   /////////////////////// DELEGATED TESTS, A PROCESSOR "IS A" SUBSCRIBER //////////////////////
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#4.1
+  // Verifies rule: https://github.com/reactive-streams/reactive-streams-jvm#4.1
 
   @Test
   public void required_exerciseWhiteboxHappyPath() throws Throwable {
@@ -504,7 +539,7 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
   }
 
   @Override @Test
-  public void required_spec205_mustCallSubscriptionCancelIfItAlreadyHasAnSubscriptionAndReceivesAnotherOnSubscribeSignal() throws Exception {
+  public void required_spec205_mustCallSubscriptionCancelIfItAlreadyHasAnSubscriptionAndReceivesAnotherOnSubscribeSignal() throws Throwable {
     subscriberVerification.required_spec205_mustCallSubscriptionCancelIfItAlreadyHasAnSubscriptionAndReceivesAnotherOnSubscribeSignal();
   }
 
@@ -556,6 +591,19 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
   @Override @Test
   public void untested_spec213_failingOnSignalInvocation() throws Exception {
     subscriberVerification.untested_spec213_failingOnSignalInvocation();
+  }
+
+  @Override @Test
+  public void required_spec213_onSubscribe_mustThrowNullPointerExceptionWhenParametersAreNull() throws Throwable {
+    subscriberVerification.required_spec213_onSubscribe_mustThrowNullPointerExceptionWhenParametersAreNull();
+  }
+  @Override @Test
+  public void required_spec213_onNext_mustThrowNullPointerExceptionWhenParametersAreNull() throws Throwable {
+    subscriberVerification.required_spec213_onNext_mustThrowNullPointerExceptionWhenParametersAreNull();
+  }
+  @Override @Test
+  public void required_spec213_onError_mustThrowNullPointerExceptionWhenParametersAreNull() throws Throwable {
+    subscriberVerification.required_spec213_onError_mustThrowNullPointerExceptionWhenParametersAreNull();
   }
 
   @Override @Test
@@ -641,7 +689,7 @@ public abstract class IdentityProcessorVerification<T> extends WithHelperPublish
           sub1.expectCompletion(env.defaultTimeoutMillis());
           sub2.expectCompletion(env.defaultTimeoutMillis());
 
-          env.verifyNoAsyncErrors();
+          env.verifyNoAsyncErrorsNoDelay();
         }};
       }
     });

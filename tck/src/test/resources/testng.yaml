@@ -6,5 +6,6 @@ tests:
     classes:
       - org.reactivestreams.tck.IdentityProcessorVerificationDelegationTest
       - org.reactivestreams.tck.PublisherVerificationTest
+      - org.reactivestreams.tck.BokenExampleTest
       - org.reactivestreams.tck.SubscriberBlackboxVerificationTest
       - org.reactivestreams.tck.SubscriberWhiteboxVerificationTest

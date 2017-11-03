@@ -1,6 +1,19 @@
+/************************************************************************
+ * Licensed under Public Domain (CC0)                                    *
+ *                                                                       *
+ * To the extent possible under law, the person who associated CC0 with  *
+ * this code has waived all copyright and related or neighboring         *
+ * rights to this code.                                                  *
+ *                                                                       *
+ * You should have received a copy of the CC0 legalcode along with this  *
+ * work. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.*
+ ************************************************************************/
+
 package org.reactivestreams.tck;
 
 import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 import org.reactivestreams.example.unicast.AsyncIterablePublisher;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -31,7 +44,7 @@ public class SingleElementPublisherTest extends PublisherVerification<Integer> {
   }
 
   @Override
-  public Publisher<Integer> createErrorStatePublisher() {
+  public Publisher<Integer> createFailedPublisher() {
     return null;
   }
 

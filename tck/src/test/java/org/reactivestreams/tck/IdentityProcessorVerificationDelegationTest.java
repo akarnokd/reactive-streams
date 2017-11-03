@@ -1,11 +1,23 @@
+/************************************************************************
+ * Licensed under Public Domain (CC0)                                    *
+ *                                                                       *
+ * To the extent possible under law, the person who associated CC0 with  *
+ * this code has waived all copyright and related or neighboring         *
+ * rights to this code.                                                  *
+ *                                                                       *
+ * You should have received a copy of the CC0 legalcode along with this  *
+ * work. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.*
+ ************************************************************************/
+
 package org.reactivestreams.tck;
 
-import org.testng.AssertJUnit;
 import org.testng.annotations.Test;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+
+import static org.testng.AssertJUnit.assertTrue;
 
 /**
  * The {@link org.reactivestreams.tck.IdentityProcessorVerification} must also run all tests from
@@ -52,7 +64,7 @@ public class IdentityProcessorVerificationDelegationTest {
           delegatingFrom,
           targetTest, targetClass.getSimpleName(), targetTest);
 
-      AssertJUnit.assertTrue(msg, testsInclude(allTests, targetTest));
+      assertTrue(msg, testsInclude(allTests, targetTest));
     }
   }
 

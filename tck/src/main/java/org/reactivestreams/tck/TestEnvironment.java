@@ -1,12 +1,23 @@
+/************************************************************************
+ * Licensed under Public Domain (CC0)                                    *
+ *                                                                       *
+ * To the extent possible under law, the person who associated CC0 with  *
+ * this code has waived all copyright and related or neighboring         *
+ * rights to this code.                                                  *
+ *                                                                       *
+ * You should have received a copy of the CC0 legalcode along with this  *
+ * work. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.*
+ ************************************************************************/
+
 package org.reactivestreams.tck;
 
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
-import org.reactivestreams.tck.support.SubscriberBufferOverflowException;
-import org.reactivestreams.tck.support.Optional;
+import org.reactivestreams.tck.flow.support.SubscriberBufferOverflowException;
+import org.reactivestreams.tck.flow.support.Optional;
 
-import java.text.NumberFormat;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -23,7 +34,10 @@ public class TestEnvironment {
   private static final String DEFAULT_TIMEOUT_MILLIS_ENV = "DEFAULT_TIMEOUT_MILLIS";
   private static final long DEFAULT_TIMEOUT_MILLIS = 100;
 
+  private static final String DEFAULT_NO_SIGNALS_TIMEOUT_MILLIS_ENV = "DEFAULT_NO_SIGNALS_TIMEOUT_MILLIS";
+
   private final long defaultTimeoutMillis;
+  private final long defaultNoSignalsTimeoutMillis;
   private final boolean printlnDebug;
 
   private CopyOnWriteArrayList<Throwable> asyncErrors = new CopyOnWriteArrayList<Throwable>();
@@ -33,14 +47,27 @@ public class TestEnvironment {
    * interactions. Longer timeout does not invalidate the correctness of
    * the implementation, but can in some cases result in longer time to
    * run the tests.
+   * @param defaultTimeoutMillis default timeout to be used in all expect* methods
+   * @param defaultNoSignalsTimeoutMillis default timeout to be used when no further signals are expected anymore
+   * @param printlnDebug         if true, signals such as OnNext / Request / OnComplete etc will be printed to standard output,
+   */
+  public TestEnvironment(long defaultTimeoutMillis, long defaultNoSignalsTimeoutMillis, boolean printlnDebug) {
+    this.defaultTimeoutMillis = defaultTimeoutMillis;
+    this.defaultNoSignalsTimeoutMillis = defaultNoSignalsTimeoutMillis;
+    this.printlnDebug = printlnDebug;
+  }
+
+  /**
+   * Tests must specify the timeout for expected outcome of asynchronous
+   * interactions. Longer timeout does not invalidate the correctness of
+   * the implementation, but can in some cases result in longer time to
+   * run the tests.
    *
    * @param defaultTimeoutMillis default timeout to be used in all expect* methods
-   * @param printlnDebug         if true, signals such as OnNext / Request / OnComplete etc will be printed to standard output,
-   *                             often helpful to pinpoint simple race conditions etc.
+   * @param defaultNoSignalsTimeoutMillis default timeout to be used when no further signals are expected anymore
    */
-  public TestEnvironment(long defaultTimeoutMillis, boolean printlnDebug) {
-    this.defaultTimeoutMillis = defaultTimeoutMillis;
-    this.printlnDebug = printlnDebug;
+  public TestEnvironment(long defaultTimeoutMillis, long defaultNoSignalsTimeoutMillis) {
+    this(defaultTimeoutMillis, defaultNoSignalsTimeoutMillis, false);
   }
 
   /**
@@ -52,7 +79,7 @@ public class TestEnvironment {
    * @param defaultTimeoutMillis default timeout to be used in all expect* methods
    */
   public TestEnvironment(long defaultTimeoutMillis) {
-    this(defaultTimeoutMillis, false);
+    this(defaultTimeoutMillis, defaultTimeoutMillis, false);
   }
 
   /**
@@ -68,7 +95,7 @@ public class TestEnvironment {
    *                     often helpful to pinpoint simple race conditions etc.
    */
   public TestEnvironment(boolean printlnDebug) {
-    this(envDefaultTimeoutMillis(), printlnDebug);
+    this(envDefaultTimeoutMillis(), envDefaultNoSignalsTimeoutMillis(), printlnDebug);
   }
 
   /**
@@ -81,11 +108,20 @@ public class TestEnvironment {
    * or the default value ({@link TestEnvironment#DEFAULT_TIMEOUT_MILLIS}) will be used.
    */
   public TestEnvironment() {
-    this(envDefaultTimeoutMillis());
+    this(envDefaultTimeoutMillis(), envDefaultNoSignalsTimeoutMillis());
   }
 
+  /** This timeout is used when waiting for a signal to arrive. */
   public long defaultTimeoutMillis() {
     return defaultTimeoutMillis;
+  }
+
+  /**
+   * This timeout is used when asserting that no further signals are emitted.
+   * Note that this timeout default
+   */
+  public long defaultNoSignalsTimeoutMillis() {
+    return defaultNoSignalsTimeoutMillis;
   }
 
   /**
@@ -98,8 +134,23 @@ public class TestEnvironment {
     if (envMillis == null) return DEFAULT_TIMEOUT_MILLIS;
     else try {
       return Long.parseLong(envMillis);
-    } catch(NumberFormatException ex) {
+    } catch (NumberFormatException ex) {
       throw new IllegalArgumentException(String.format("Unable to parse %s env value [%s] as long!", DEFAULT_TIMEOUT_MILLIS_ENV, envMillis), ex);
+    }
+  }
+
+  /**
+   * Tries to parse the env variable {@code DEFAULT_NO_SIGNALS_TIMEOUT_MILLIS} as long and returns the value if present OR its default value.
+   *
+   * @throws java.lang.IllegalArgumentException when unable to parse the env variable
+   */
+  public static long envDefaultNoSignalsTimeoutMillis() {
+    final String envMillis = System.getenv(DEFAULT_NO_SIGNALS_TIMEOUT_MILLIS_ENV);
+    if (envMillis == null) return envDefaultTimeoutMillis();
+    else try {
+      return Long.parseLong(envMillis);
+    } catch (NumberFormatException ex) {
+      throw new IllegalArgumentException(String.format("Unable to parse %s env value [%s] as long!", DEFAULT_NO_SIGNALS_TIMEOUT_MILLIS_ENV, envMillis), ex);
     }
   }
 
@@ -107,7 +158,7 @@ public class TestEnvironment {
    * To flop means to "fail asynchronously", either by onErroring or by failing some TCK check triggered asynchronously.
    * This method does *NOT* fail the test - it's up to inspections of the error to fail the test if required.
    *
-   * Use {@code env.verifyNoAsyncErrors()} at the end of your TCK tests to verify there no flops called during it's execution.
+   * Use {@code env.verifyNoAsyncErrorsNoDelay()} at the end of your TCK tests to verify there no flops called during it's execution.
    * To check investigate asyncErrors more closely you can use {@code expectError} methods or collect the error directly
    * from the environment using {@code env.dropAsyncError()}.
    *
@@ -127,7 +178,7 @@ public class TestEnvironment {
    *
    * This overload keeps the passed in throwable as the asyncError, instead of creating an AssertionError for this.
    *
-   * Use {@code env.verifyNoAsyncErrors()} at the end of your TCK tests to verify there no flops called during it's execution.
+   * Use {@code env.verifyNoAsyncErrorsNoDelay()} at the end of your TCK tests to verify there no flops called during it's execution.
    * To check investigate asyncErrors more closely you can use {@code expectError} methods or collect the error directly
    * from the environment using {@code env.dropAsyncError()}.
    *
@@ -147,7 +198,7 @@ public class TestEnvironment {
    *
    * This overload keeps the passed in throwable as the asyncError, instead of creating an AssertionError for this.
    *
-   * Use {@code env.verifyNoAsyncErrors()} at the end of your TCK tests to verify there no flops called during it's execution.
+   * Use {@code env.verifyNoAsyncErrorsNoDelay()} at the end of your TCK tests to verify there no flops called during it's execution.
    * To check investigate asyncErrors more closely you can use {@code expectError} methods or collect the error directly
    * from the environment using {@code env.dropAsyncError()}.
    *
@@ -167,7 +218,7 @@ public class TestEnvironment {
    * This method DOES fail the test right away (it tries to, by throwing an AssertionException),
    * in such it is different from {@link org.reactivestreams.tck.TestEnvironment#flop} which only records the error.
    *
-   * Use {@code env.verifyNoAsyncErrors()} at the end of your TCK tests to verify there no flops called during it's execution.
+   * Use {@code env.verifyNoAsyncErrorsNoDelay()} at the end of your TCK tests to verify there no flops called during it's execution.
    * To check investigate asyncErrors more closely you can use {@code expectError} methods or collect the error directly
    * from the environment using {@code env.dropAsyncError()}.
    *
@@ -192,7 +243,7 @@ public class TestEnvironment {
   public <T> void subscribe(Publisher<T> pub, TestSubscriber<T> sub, long timeoutMillis) throws InterruptedException {
     pub.subscribe(sub);
     sub.subscription.expectCompletion(timeoutMillis, String.format("Could not subscribe %s to Publisher %s", sub, pub));
-    verifyNoAsyncErrors();
+    verifyNoAsyncErrorsNoDelay();
   }
 
   public <T> ManualSubscriber<T> newBlackholeSubscriber(Publisher<T> pub) throws InterruptedException {
@@ -223,16 +274,39 @@ public class TestEnvironment {
     }
   }
 
+  /**
+   * Waits for {@link TestEnvironment#defaultTimeoutMillis()} and then verifies that no asynchronous errors
+   * were signalled pior to, or during that time (by calling {@code flop()}).
+   */
+  public void verifyNoAsyncErrors() {
+    verifyNoAsyncErrors(defaultNoSignalsTimeoutMillis());
+  }
+
+  /**
+   * This version of {@code verifyNoAsyncErrors} should be used when errors still could be signalled
+   * asynchronously during {@link TestEnvironment#defaultTimeoutMillis()} time.
+   * <p></p>
+   * It will immediatly check if any async errors were signaled (using {@link TestEnvironment#flop(String)},
+   * and if no errors encountered wait for another default timeout as the errors may yet be signalled.
+   * The initial check is performed in order to fail-fast in case of an already failed test.
+   */
   public void verifyNoAsyncErrors(long delay) {
     try {
+      verifyNoAsyncErrorsNoDelay();
+
       Thread.sleep(delay);
-      verifyNoAsyncErrors();
+      verifyNoAsyncErrorsNoDelay();
     } catch (InterruptedException e) {
       throw new RuntimeException(e);
     }
   }
 
-  public void verifyNoAsyncErrors() {
+  /**
+   * Verifies that no asynchronous errors were signalled pior to calling this method (by calling {@code flop()}).
+   * This version of verifyNoAsyncError <b>does not wait before checking for asynchronous errors</b>, and is to be used
+   * for example in tight loops etc.
+   */
+  public void verifyNoAsyncErrorsNoDelay() {
     for (Throwable e : asyncErrors) {
       if (e instanceof AssertionError) {
         throw (AssertionError) e;
@@ -267,6 +341,9 @@ public class TestEnvironment {
 
   // ---- classes ----
 
+  /**
+   * {@link Subscriber} implementation which can be steered by test code and asserted on.
+   */
   public static class ManualSubscriber<T> extends TestSubscriber<T> {
     Receptacle<T> received;
 
@@ -312,6 +389,10 @@ public class TestEnvironment {
     public T requestNextElement(long timeoutMillis, String errorMsg) throws InterruptedException {
       request(1);
       return nextElement(timeoutMillis, errorMsg);
+    }
+
+    public Optional<T> requestNextElementOrEndOfStream() throws InterruptedException {
+      return requestNextElementOrEndOfStream(env.defaultTimeoutMillis(), "Did not receive expected stream completion");
     }
 
     public Optional<T> requestNextElementOrEndOfStream(String errorMsg) throws InterruptedException {
@@ -433,14 +514,24 @@ public class TestEnvironment {
     public <E extends Throwable> void expectErrorWithMessage(Class<E> expected, String requiredMessagePart) throws Exception {
       expectErrorWithMessage(expected, requiredMessagePart, env.defaultTimeoutMillis());
     }
+    public <E extends Throwable> void expectErrorWithMessage(Class<E> expected, List<String> requiredMessagePartAlternatives) throws Exception {
+      expectErrorWithMessage(expected, requiredMessagePartAlternatives, env.defaultTimeoutMillis());
+    }
 
     @SuppressWarnings("ThrowableResultOfMethodCallIgnored")
     public <E extends Throwable> void expectErrorWithMessage(Class<E> expected, String requiredMessagePart, long timeoutMillis) throws Exception {
+      expectErrorWithMessage(expected, Collections.singletonList(requiredMessagePart), timeoutMillis);
+    }
+    public <E extends Throwable> void expectErrorWithMessage(Class<E> expected, List<String> requiredMessagePartAlternatives, long timeoutMillis) throws Exception {
       final E err = expectError(expected, timeoutMillis);
       final String message = err.getMessage();
-      assertTrue(message.contains(requiredMessagePart),
+      
+      boolean contains = false;
+      for (String requiredMessagePart : requiredMessagePartAlternatives) 
+        if (message.contains(requiredMessagePart)) contains = true; // not short-circuting loop, it is expected to
+      assertTrue(contains,
                  String.format("Got expected exception [%s] but missing message part [%s], was: %s",
-                               err.getClass(), requiredMessagePart, err.getMessage()));
+                               err.getClass(), "anyOf: " + requiredMessagePartAlternatives, err.getMessage()));
     }
 
     public <E extends Throwable> E expectError(Class<E> expected) throws Exception {
@@ -460,11 +551,11 @@ public class TestEnvironment {
     }
 
     public void expectNone() throws InterruptedException {
-      expectNone(env.defaultTimeoutMillis());
+      expectNone(env.defaultNoSignalsTimeoutMillis());
     }
 
     public void expectNone(String errMsgPrefix) throws InterruptedException {
-      expectNone(env.defaultTimeoutMillis(), errMsgPrefix);
+      expectNone(env.defaultNoSignalsTimeoutMillis(), errMsgPrefix);
     }
 
     public void expectNone(long withinMillis) throws InterruptedException {
@@ -698,6 +789,10 @@ public class TestEnvironment {
 
     public void expectCancelling(long timeoutMillis) throws InterruptedException {
       cancelled.expectClose(timeoutMillis, "Did not receive expected cancelling of upstream subscription");
+    }
+    
+    public boolean isCancelled() throws InterruptedException {
+      return cancelled.isClosed();
     }
   }
 

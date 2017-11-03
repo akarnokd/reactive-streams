@@ -3,7 +3,7 @@ subprojects {
     apply plugin: "osgi"
 
     group = "org.reactivestreams"
-    version = "1.0.0.RC1"
+    version = "1.0.1"
 
     sourceCompatibility = 1.6
     targetCompatibility = 1.6
@@ -28,7 +28,7 @@ subprojects {
     tasks.withType(Test) {
       testLogging {
         exceptionFormat "full"
-        events "failed", "started"
+        events "failed", "started", "standard_out", "standard_error"
       }
     }
 
@@ -36,15 +36,21 @@ subprojects {
         mavenCentral()
     }
 
+
     jar {
         manifest {
-            instruction "Bundle-Vendor", "Reactive Streams SIG"
-            instruction "Bundle-Description", "Reactive Streams API"
-            instruction "Bundle-DocURL", "http://reactive-streams.org"
+            instructionReplace "Bundle-Vendor", "Reactive Streams SIG"
+            instructionReplace "Bundle-Description", "Reactive Streams API"
+            instructionReplace "Bundle-DocURL", "http://reactive-streams.org"
+            instructionReplace "Bundle-Version", "1.0.1"
         }
     }
 
-    if (name in ["reactive-streams", "reactive-streams-tck"]) {
+    if (name in ["reactive-streams", 
+                 "reactive-streams-tck", 
+                 "reactive-streams-tck-flow",
+                 "reactive-streams-examples",
+                 "reactive-streams-flow-bridge"]) {
         apply plugin: "maven"
         apply plugin: "signing"
 

@@ -1,3 +1,14 @@
+/************************************************************************
+* Licensed under Public Domain (CC0)                                    *
+*                                                                       *
+* To the extent possible under law, the person who associated CC0 with  *
+* this code has waived all copyright and related or neighboring         *
+* rights to this code.                                                  *
+*                                                                       *
+* You should have received a copy of the CC0 legalcode along with this  *
+* work. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.*
+************************************************************************/
+
 package org.reactivestreams.example.unicast;
 
 import org.reactivestreams.Publisher;
@@ -66,6 +77,7 @@ public class AsyncIterablePublisher<T> implements Publisher<T> {
     private Iterator<T> iterator; // This is our cursor into the data stream, which we will send to the `Subscriber`
 
     SubscriptionImpl(final Subscriber<? super T> subscriber) {
+      // As per rule 1.09, we need to throw a `java.lang.NullPointerException` if the `Subscriber` is `null`
       if (subscriber == null) throw null;
       this.subscriber = subscriber;
     }
@@ -105,7 +117,11 @@ public class AsyncIterablePublisher<T> implements Publisher<T> {
         if (iterator == null)
           iterator = Collections.<T>emptyList().iterator(); // So we can assume that `iterator` is never null
       } catch(final Throwable t) {
-        terminateDueTo(t); // Here we send onError, obeying rule 1.12
+        subscriber.onSubscribe(new Subscription() { // We need to make sure we signal onSubscribe before onError, obeying rule 1.9
+          @Override public void cancel() {}
+          @Override public void request(long n) {}
+        });
+        terminateDueTo(t); // Here we send onError, obeying rule 1.09
       }
 
       if (!cancelled) {
@@ -176,7 +192,7 @@ public class AsyncIterablePublisher<T> implements Publisher<T> {
       cancelled = true; // When we signal onError, the subscription must be considered as cancelled, as per rule 1.6
       try {
         subscriber.onError(t); // Then we signal the error downstream, to the `Subscriber`
-      } catch(final Throwable t2) { // If `onError` throws an exception, this is a spec violation according to rule 1.13, and all we can do is to log it.
+      } catch(final Throwable t2) { // If `onError` throws an exception, this is a spec violation according to rule 1.9, and all we can do is to log it.
         (new IllegalStateException(subscriber + " violated the Reactive Streams rule 2.13 by throwing an exception from onError.", t2)).printStackTrace(System.err);
       }
     }

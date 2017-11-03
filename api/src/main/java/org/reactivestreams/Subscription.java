@@ -1,3 +1,14 @@
+/************************************************************************
+ * Licensed under Public Domain (CC0)                                    *
+ *                                                                       *
+ * To the extent possible under law, the person who associated CC0 with  *
+ * this code has waived all copyright and related or neighboring         *
+ * rights to this code.                                                  *
+ *                                                                       *
+ * You should have received a copy of the CC0 legalcode along with this  *
+ * work. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.*
+ ************************************************************************/
+
 package org.reactivestreams;
 
 /**
@@ -27,7 +38,7 @@ public interface Subscription {
     /**
      * Request the {@link Publisher} to stop sending data and clean up resources.
      * <p>
-     * Data may still be sent to meet previously signalled demand after calling cancel as this request is asynchronous.
+     * Data may still be sent to meet previously signalled demand after calling cancel.
      */
     public void cancel();
 }

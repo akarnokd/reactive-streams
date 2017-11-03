@@ -1,3 +1,14 @@
+/************************************************************************
+ * Licensed under Public Domain (CC0)                                    *
+ *                                                                       *
+ * To the extent possible under law, the person who associated CC0 with  *
+ * this code has waived all copyright and related or neighboring         *
+ * rights to this code.                                                  *
+ *                                                                       *
+ * You should have received a copy of the CC0 legalcode along with this  *
+ * work. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.*
+ ************************************************************************/
+
 package org.reactivestreams.tck;
 
 import org.reactivestreams.Publisher;
@@ -5,9 +16,9 @@ import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 import org.reactivestreams.tck.TestEnvironment.ManualPublisher;
 import org.reactivestreams.tck.TestEnvironment.ManualSubscriber;
-import org.reactivestreams.tck.support.Optional;
-import org.reactivestreams.tck.support.SubscriberBlackboxVerificationRules;
-import org.reactivestreams.tck.support.TestException;
+import org.reactivestreams.tck.flow.support.Optional;
+import org.reactivestreams.tck.flow.support.SubscriberBlackboxVerificationRules;
+import org.reactivestreams.tck.flow.support.TestException;
 import org.testng.SkipException;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -18,6 +29,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import static org.reactivestreams.tck.SubscriberWhiteboxVerification.BlackboxSubscriberProxy;
+import static org.testng.Assert.assertTrue;
 
 /**
  * Provides tests for verifying {@link org.reactivestreams.Subscriber} and {@link org.reactivestreams.Subscription}
@@ -30,7 +42,7 @@ import static org.reactivestreams.tck.SubscriberWhiteboxVerification.BlackboxSub
  * @see org.reactivestreams.Subscriber
  * @see org.reactivestreams.Subscription
  */
-public abstract class SubscriberBlackboxVerification<T> extends WithHelperPublisher<T> 
+public abstract class SubscriberBlackboxVerification<T> extends WithHelperPublisher<T>
   implements SubscriberBlackboxVerificationRules {
 
   protected final TestEnvironment env;
@@ -46,6 +58,16 @@ public abstract class SubscriberBlackboxVerification<T> extends WithHelperPublis
    * It must create a new {@link org.reactivestreams.Subscriber} instance to be subjected to the testing logic.
    */
   public abstract Subscriber<T> createSubscriber();
+
+  /**
+   * Override this method if the Subscriber implementation you are verifying
+   * needs an external signal before it signals demand to its Publisher.
+   *
+   * By default this method does nothing.
+   */
+  public void triggerRequest(final Subscriber<? super T> subscriber) {
+    // this method is intentionally left blank
+  }
 
   // ENV SETUP
 
@@ -67,28 +89,40 @@ public abstract class SubscriberBlackboxVerification<T> extends WithHelperPublis
 
   ////////////////////// SPEC RULE VERIFICATION ///////////////////////////////
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.1
   @Override @Test
   public void required_spec201_blackbox_mustSignalDemandViaSubscriptionRequest() throws Throwable {
     blackboxSubscriberTest(new BlackboxTestStageTestRun() {
       @Override
       public void run(BlackboxTestStage stage) throws InterruptedException {
-        final long n = stage.expectRequest();// assuming subscriber wants to consume elements...
+        triggerRequest(stage.subProxy().sub());
+        final long requested = stage.expectRequest();// assuming subscriber wants to consume elements...
+        final long signalsToEmit = Math.min(requested, 512); // protecting against Subscriber which sends ridiculous large demand
 
         // should cope with up to requested number of elements
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < signalsToEmit && sampleIsCancelled(stage, i, 10); i++)
           stage.signalNext();
+
+        // we complete after `signalsToEmit` (which can be less than `requested`),
+        // which is legal under https://github.com/reactive-streams/reactive-streams-jvm#1.2
+        stage.sendCompletion();
+      }
+
+      /**
+       * In order to allow some "skid" and not check state on each iteration,
+       * only check {@code stage.isCancelled} every {@code checkInterval}'th iteration.
+       */
+      private boolean sampleIsCancelled(BlackboxTestStage stage, int i, int checkInterval) throws InterruptedException {
+        if (i % checkInterval == 0) return stage.isCancelled();
+        else return false;
       }
     });
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.2
   @Override @Test
   public void untested_spec202_blackbox_shouldAsynchronouslyDispatch() throws Exception {
     notVerified(); // cannot be meaningfully tested, or can it?
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.3
   @Override @Test
   public void required_spec203_blackbox_mustNotCallMethodsOnSubscriptionOrPublisherInOnComplete() throws Throwable {
     blackboxSubscriberWithoutSetupTest(new BlackboxTestStageTestRun() {
@@ -120,12 +154,11 @@ public abstract class SubscriberBlackboxVerification<T> extends WithHelperPublis
         sub.onSubscribe(subs);
         sub.onComplete();
 
-        env.verifyNoAsyncErrors();
+        env.verifyNoAsyncErrorsNoDelay();
       }
     });
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.3
   @Override @Test
   public void required_spec203_blackbox_mustNotCallMethodsOnSubscriptionOrPublisherInOnError() throws Throwable {
     blackboxSubscriberWithoutSetupTest(new BlackboxTestStageTestRun() {
@@ -159,18 +192,16 @@ public abstract class SubscriberBlackboxVerification<T> extends WithHelperPublis
         sub.onSubscribe(subs);
         sub.onError(new TestException());
 
-        env.verifyNoAsyncErrors();
+        env.verifyNoAsyncErrorsNoDelay();
       }
     });
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.4
   @Override @Test
   public void untested_spec204_blackbox_mustConsiderTheSubscriptionAsCancelledInAfterRecievingOnCompleteOrOnError() throws Exception {
     notVerified(); // cannot be meaningfully tested, or can it?
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.5
   @Override @Test
   public void required_spec205_blackbox_mustCallSubscriptionCancelIfItAlreadyHasAnSubscriptionAndReceivesAnotherOnSubscribeSignal() throws Exception {
     new BlackboxTestStage(env) {{
@@ -195,160 +226,201 @@ public abstract class SubscriberBlackboxVerification<T> extends WithHelperPublis
           });
 
       secondSubscriptionCancelled.expectClose("Expected SecondSubscription given to subscriber to be cancelled, but `Subscription.cancel()` was not called.");
-      env.verifyNoAsyncErrors();
+      env.verifyNoAsyncErrorsNoDelay();
+      sendCompletion(); // we're done, complete the subscriber under test
     }};
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.6
   @Override @Test
   public void untested_spec206_blackbox_mustCallSubscriptionCancelIfItIsNoLongerValid() throws Exception {
     notVerified(); // cannot be meaningfully tested, or can it?
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.7
   @Override @Test
   public void untested_spec207_blackbox_mustEnsureAllCallsOnItsSubscriptionTakePlaceFromTheSameThreadOrTakeCareOfSynchronization() throws Exception {
     notVerified(); // cannot be meaningfully tested, or can it?
     // the same thread part of the clause can be verified but that is not very useful, or is it?
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.8
   @Override @Test
   public void untested_spec208_blackbox_mustBePreparedToReceiveOnNextSignalsAfterHavingCalledSubscriptionCancel() throws Throwable {
     notVerified(); // cannot be meaningfully tested as black box, or can it?
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.9
   @Override @Test
   public void required_spec209_blackbox_mustBePreparedToReceiveAnOnCompleteSignalWithPrecedingRequestCall() throws Throwable {
-    blackboxSubscriberWithoutSetupTest(new BlackboxTestStageTestRun() {
-      @Override
+    blackboxSubscriberTest(new BlackboxTestStageTestRun() {
+      @Override @SuppressWarnings("ThrowableResultOfMethodCallIgnored")
       public void run(BlackboxTestStage stage) throws Throwable {
-        final Publisher<T> pub = new Publisher<T>() {
-          @Override public void subscribe(final Subscriber<? super T> s) {
-            s.onSubscribe(new Subscription() {
-              private boolean completed = false;
-
-              @Override public void request(long n) {
-                if (!completed) {
-                  completed = true;
-                  s.onComplete(); // Publisher now realises that it is in fact already completed
-                }
-              }
-
-              @Override public void cancel() {
-                // noop, ignore
-              }
-            });
-          }
-        };
-
-        final Subscriber<T> sub = createSubscriber();
-        final BlackboxSubscriberProxy<T> probe = stage.createBlackboxSubscriberProxy(env, sub);
-
-        pub.subscribe(probe);
-        probe.expectCompletion();
-        probe.expectNone();
-
-        env.verifyNoAsyncErrors();
+        triggerRequest(stage.subProxy().sub());
+        final long notUsed = stage.expectRequest(); // received request signal
+        stage.sub().onComplete();
+        stage.subProxy().expectCompletion();
       }
     });
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.9
   @Override @Test
   public void required_spec209_blackbox_mustBePreparedToReceiveAnOnCompleteSignalWithoutPrecedingRequestCall() throws Throwable {
-    blackboxSubscriberWithoutSetupTest(new BlackboxTestStageTestRun() {
-      @Override
+    blackboxSubscriberTest(new BlackboxTestStageTestRun() {
+      @Override @SuppressWarnings("ThrowableResultOfMethodCallIgnored")
       public void run(BlackboxTestStage stage) throws Throwable {
-        final Publisher<T> pub = new Publisher<T>() {
-          @Override
-          public void subscribe(Subscriber<? super T> s) {
-            s.onComplete();
-          }
-        };
-
-        final Subscriber<T> sub = createSubscriber();
-        final BlackboxSubscriberProxy<T> probe = stage.createBlackboxSubscriberProxy(env, sub);
-
-        pub.subscribe(probe);
-        probe.expectCompletion();
-
-        env.verifyNoAsyncErrors();
+        final Subscriber<? super T> sub = stage.sub();
+        sub.onComplete();
+        stage.subProxy().expectCompletion();
       }
     });
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.10
   @Override @Test
   public void required_spec210_blackbox_mustBePreparedToReceiveAnOnErrorSignalWithPrecedingRequestCall() throws Throwable {
     blackboxSubscriberTest(new BlackboxTestStageTestRun() {
-      @Override
-      @SuppressWarnings("ThrowableResultOfMethodCallIgnored")
+      @Override @SuppressWarnings("ThrowableResultOfMethodCallIgnored")
       public void run(BlackboxTestStage stage) throws Throwable {
+        triggerRequest(stage.subProxy().sub());
+        final long notUsed = stage.expectRequest(); // received request signal
+        stage.sub().onError(new TestException()); // in response to that, we fail
+        stage.subProxy().expectError(Throwable.class);
+      }
+    });
+  }
+
+  // Verifies rule: https://github.com/reactive-streams/reactive-streams-jvm#2.10
+  @Override @Test
+  public void required_spec210_blackbox_mustBePreparedToReceiveAnOnErrorSignalWithoutPrecedingRequestCall() throws Throwable {
+    blackboxSubscriberTest(new BlackboxTestStageTestRun() {
+      @Override @SuppressWarnings("ThrowableResultOfMethodCallIgnored")
+      public void run(BlackboxTestStage stage) throws Throwable {
+
         stage.sub().onError(new TestException());
         stage.subProxy().expectError(Throwable.class);
       }
     });
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.11
   @Override @Test
   public void untested_spec211_blackbox_mustMakeSureThatAllCallsOnItsMethodsHappenBeforeTheProcessingOfTheRespectiveEvents() throws Exception {
     notVerified(); // cannot be meaningfully tested, or can it?
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.12
   @Override @Test
   public void untested_spec212_blackbox_mustNotCallOnSubscribeMoreThanOnceBasedOnObjectEquality() throws Throwable {
     notVerified(); // cannot be meaningfully tested as black box, or can it?
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#2.13
   @Override @Test
   public void untested_spec213_blackbox_failingOnSignalInvocation() throws Exception {
     notVerified(); // cannot be meaningfully tested, or can it?
   }
 
+  @Override @Test
+  public void required_spec213_blackbox_onSubscribe_mustThrowNullPointerExceptionWhenParametersAreNull() throws Throwable {
+    blackboxSubscriberWithoutSetupTest(new BlackboxTestStageTestRun() {
+      @Override
+      public void run(BlackboxTestStage stage) throws Throwable {
+
+        {
+          final Subscriber<T> sub = createSubscriber();
+          boolean gotNPE = false;
+          try {
+            sub.onSubscribe(null);
+          } catch(final NullPointerException expected) {
+            gotNPE = true;
+          }
+          assertTrue(gotNPE, "onSubscribe(null) did not throw NullPointerException");
+        }
+
+        env.verifyNoAsyncErrorsNoDelay();
+      }
+    });
+  }
+
+  @Override @Test
+  public void required_spec213_blackbox_onNext_mustThrowNullPointerExceptionWhenParametersAreNull() throws Throwable {
+    blackboxSubscriberWithoutSetupTest(new BlackboxTestStageTestRun() {
+      @Override
+      public void run(BlackboxTestStage stage) throws Throwable {
+        final Subscription subscription = new Subscription() {
+          @Override public void request(final long elements) {}
+          @Override public void cancel() {}
+        };
+
+        {
+          final Subscriber<T> sub = createSubscriber();
+          boolean gotNPE = false;
+          sub.onSubscribe(subscription);
+          try {
+            sub.onNext(null);
+          } catch(final NullPointerException expected) {
+            gotNPE = true;
+          }
+          assertTrue(gotNPE, "onNext(null) did not throw NullPointerException");
+        }
+
+        env.verifyNoAsyncErrorsNoDelay();
+      }
+    });
+  }
+
+  @Override @Test
+  public void required_spec213_blackbox_onError_mustThrowNullPointerExceptionWhenParametersAreNull() throws Throwable {
+    blackboxSubscriberWithoutSetupTest(new BlackboxTestStageTestRun() {
+      @Override
+      public void run(BlackboxTestStage stage) throws Throwable {
+        final Subscription subscription = new Subscription() {
+          @Override public void request(final long elements) {}
+          @Override public void cancel() {}
+        };
+
+        {
+          final Subscriber<T> sub = createSubscriber();
+          boolean gotNPE = false;
+          sub.onSubscribe(subscription);
+          try {
+            sub.onError(null);
+          } catch(final NullPointerException expected) {
+            gotNPE = true;
+          }
+          assertTrue(gotNPE, "onError(null) did not throw NullPointerException");
+        }
+
+        env.verifyNoAsyncErrorsNoDelay();
+      }
+    });
+  }
+
   ////////////////////// SUBSCRIPTION SPEC RULE VERIFICATION //////////////////
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#3.1
   @Override @Test
   public void untested_spec301_blackbox_mustNotBeCalledOutsideSubscriberContext() throws Exception {
     notVerified(); // cannot be meaningfully tested, or can it?
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#3.8
   @Override @Test
-  public void required_spec308_blackbox_requestMustRegisterGivenNumberElementsToBeProduced() throws Throwable {
+  public void untested_spec308_blackbox_requestMustRegisterGivenNumberElementsToBeProduced() throws Throwable {
     notVerified(); // cannot be meaningfully tested as black box, or can it?
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#3.10
   @Override @Test
   public void untested_spec310_blackbox_requestMaySynchronouslyCallOnNextOnSubscriber() throws Exception {
     notVerified(); // cannot be meaningfully tested, or can it?
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#3.11
   @Override @Test
   public void untested_spec311_blackbox_requestMaySynchronouslyCallOnCompleteOrOnError() throws Exception {
     notVerified(); // cannot be meaningfully tested, or can it?
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#3.14
   @Override @Test
   public void untested_spec314_blackbox_cancelMayCauseThePublisherToShutdownIfNoOtherSubscriptionExists() throws Exception {
     notVerified(); // cannot be meaningfully tested, or can it?
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#3.15
   @Override @Test
   public void untested_spec315_blackbox_cancelMustNotThrowExceptionAndMustSignalOnError() throws Exception {
     notVerified(); // cannot be meaningfully tested, or can it?
   }
 
-  // Verifies rule: https://github.com/reactive-streams/reactive-streams#3.16
   @Override @Test
   public void untested_spec316_blackbox_requestMustNotThrowExceptionAndMustOnErrorTheSubscriber() throws Exception {
     notVerified(); // cannot be meaningfully tested, or can it?
